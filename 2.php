@@ -17,6 +17,11 @@ function convertString( string $a, string $b):string
     return $a;
 }
 
+function num_end($number, $titles){
+	$cases = array (2, 0, 1, 1, 1, 2);
+	return $titles[ ($number%100>4 && $number%100<20)? 2 : $cases[min($number%10, 5)] ];
+}
+
 /**
 * функция преобразования строки
 * массив $c содержит порядковые номера вхождения подстроки $b
@@ -67,6 +72,8 @@ function importXml( string $a)
     $property_bind[] = ''; // первая строка массива параметров используемая для хранения литералов типа переменных для таблицы a_property
     $category_bind[] = ''; // первая строка массива параметров используемая для хранения литералов типа переменных для таблицы a_category
     $prod_cat_bind[] = ''; // первая строка массива параметров используемая для хранения литералов типа переменных для таблицы связи a_prod_cat
+    $category_unique = array();
+    $report = '';
     
     // парсим XML файл и собираем массивы параметров
     foreach ( $xml->Товар as $p )
@@ -107,63 +114,89 @@ function importXml( string $a)
             $category[][$surr] = $cat;
         }
     }
-    
-    $category_unique = array_unique($category_unique);
-
-    // таблица категорий не имеет внешних ключей, добавление в БД начнём с неё
-    // сформируем запрос SELECT что бы знать какие разделы из файла XML уже записаны в БД
-    $query = "SELECT `category_id`,`category_name` 
-                FROM `a_category` 
-                WHERE `category_name` IN ("
-                . implode(',', array_fill( 1, count( $category_unique ), '?'  ) ) 
-                ." )";
-    foreach($category_unique as $key => $value)
-        $category_unique[$key] = &$category_unique[$key];
-    array_unshift( $category_unique, str_pad('', count($category_unique), 's') );
-    $stmt = $mysqli->prepare( $query );
-    call_user_func_array([$stmt, 'bind_param'], $category_unique);
-	$stmt->execute();
-    unset( $category_unique[0] );      
-    $stmt->bind_result ( $category_id, $category_name );
-    while ( $stmt->fetch() )
+    // если добавлять нечего, закрываем соединение и выходим
+    if ( empty( $product ) )
     {
-        // сохраняем результат выборки, что бы не доставать эти записи повторно
-        // этот массив будет использоваться для заполнения таблицы связи категорий и продуктов
-        $in_db_category[$category_name] = $category_id;
-        if ( $key = array_search( $category_name, $category_unique ) ) unset($category_unique[$key]);
+        $mysqli->close();
+        return false;
     }
-
-    if ( !empty( $category_unique ) )
+    // начинаем транзакцию
+    $mysqli->query( 'START TRANSACTION;' );
+    // таблица категорий не имеет внешних ключей, добавление в БД начнём с неё, если есть что добавить
+    if ( !empty( $category_unique ))
     {
-        // если остались не занесённые в БД разделы, то сформируем запрос INSERT IGNORE
-        // на тот случай если кто-то другой произвёл вставку чуть раньше (поле `category_name` должно быть уникальным)
-        $query = "INSERT IGNORE INTO `a_category` 
-                        ( `category_name` ) 
-                        VALUES ". implode(',', array_fill( 1, count( $category_unique ), '(?)'  ) );
-        array_unshift( $category_unique, str_pad('', count($category_unique), 's') );
-        $stmt = $mysqli->prepare( $query );
-        call_user_func_array([$stmt, 'bind_param'], $category_unique);
-		$stmt->execute();
-        unset( $category_unique[0] ); 
-        // снова производим выборку на этот раз "свежих идентификаторов"
+        $category_unique = array_unique($category_unique);
+        // сформируем запрос SELECT что бы знать какие разделы из файла XML уже записаны в БД
+        $report .= '<h3>Таблица a_category</h3>';
         $query = "SELECT `category_id`,`category_name` 
                     FROM `a_category` 
                     WHERE `category_name` IN ("
                     . implode(',', array_fill( 1, count( $category_unique ), '?'  ) ) 
                     ." )";
+        foreach($category_unique as $key => $value)
+            $category_unique[$key] = &$category_unique[$key];
         array_unshift( $category_unique, str_pad('', count($category_unique), 's') );
         $stmt = $mysqli->prepare( $query );
         call_user_func_array([$stmt, 'bind_param'], $category_unique);
-		$stmt->execute();
-        unset( $category_unique[0] );      
-        $stmt->bind_result ( $category_id, $category_name );
-        while ( $stmt->fetch() )
+	    $stmt->execute();
+        $stmt->store_result();
+        unset( $category_unique[0] ); 
+        if ( $stmt->num_rows ){
+            // выводим информацию о запросе
+            $report .= '<p>- уже содержит '
+                    . $stmt->num_rows .' раздел'.num_end($stmt->num_rows, ['','а','ов'])
+                    . ' из '. count( $category_unique ) .' добавля'
+                    . num_end($stmt->num_rows, ['емого','емых','емых']).'</p>';
+            $stmt->bind_result ( $category_id, $category_name );
+            while ( $stmt->fetch() )
+            {
+                // сохраняем результат выборки, что бы не доставать эти записи повторно
+                // этот массив будет использоваться для заполнения таблицы связи категорий и продуктов
+                $in_db_category[$category_name] = $category_id;
+                if ( $key = array_search( $category_name, $category_unique ) ) unset($category_unique[$key]);
+            }
+        }
+        $stmt->close();
+        if ( !empty( $category_unique ) )
         {
-            // добавляем "свежие" категории в массив
-            $in_db_category[$category_name] = $category_id;
+            // если остались не занесённые в БД разделы, то сформируем запрос INSERT IGNORE
+            // на тот случай если кто-то другой произвёл вставку чуть раньше (поле `category_name` должно быть уникальным)
+            $query = "INSERT IGNORE INTO `a_category` 
+                            ( `category_name` ) 
+                            VALUES ". implode(',', array_fill( 1, count( $category_unique ), '(?)'  ) );
+            array_unshift( $category_unique, str_pad('', count($category_unique), 's') );
+            $stmt = $mysqli->prepare( $query );
+            call_user_func_array([$stmt, 'bind_param'], $category_unique);
+		    $stmt->execute();
+            $stmt->store_result();
+            unset( $category_unique[0] );
+            if ( $stmt->affected_rows )
+            {
+                $report .= '<p>- добавлено: '. $stmt->affected_rows .' раздел'. num_end($stmt->affected_rows, ['','а','ов']) .'</p>'; ;
+            }
+            $stmt->close();
+            // снова производим выборку на этот раз "свежих идентификаторов"
+            $query = "SELECT `category_id`,`category_name` 
+                        FROM `a_category` 
+                        WHERE `category_name` IN ("
+                        . implode(',', array_fill( 1, count( $category_unique ), '?'  ) ) 
+                        ." )";
+            array_unshift( $category_unique, str_pad('', count($category_unique), 's') );
+            $stmt = $mysqli->prepare( $query );
+            call_user_func_array([$stmt, 'bind_param'], $category_unique);
+		    $stmt->execute();
+            $stmt->store_result();
+            unset( $category_unique[0] );      
+            $stmt->bind_result ( $category_id, $category_name );
+            while ( $stmt->fetch() )
+            {
+                // добавляем "свежие" категории в массив
+                $in_db_category[$category_name] = $category_id;
+            }
+            $stmt->close();
         }
     }
-
+    
     // добавляем товары в базу данных 
     // поля `product_name` и `product_code` не уникальны
     $query = "INSERT INTO `a_product` 
@@ -174,54 +207,119 @@ function importXml( string $a)
     $stmt = $mysqli->prepare( $query );
     call_user_func_array( [$stmt, 'bind_param'], $product_bind );
 	$stmt->execute();
-    $first_id = $stmt->insert_id; // получаем идентификатор первой записи
-    // добавляем товару его идентификатор
-    foreach ( $product as $value )
+    $stmt->store_result();
+    if ( $stmt->affected_rows == count( $product ) )
     {
-        $prod_id[$first_id++] = $value;
-    }
-    $product = array_combine( array_keys( $product ), array_keys( $prod_id ) );
-    // формируем массив параметров для запроса к таблице связи товар - раздел
-    foreach ( $category as $value )
-    {
-        foreach ( $value as $key=>$val)
+        $first_id = $stmt->insert_id; // получаем идентификатор первой записи
+        $stmt->close();
+        // добавляем товару его идентификатор
+        foreach ( $product as $value )
         {
-            $prod_cat_bind[0] .= str_pad('', 2, 'ii');
-            $prod_cat_bind[] = (int)$product[$key];
-            $prod_cat_bind[] = (int)$in_db_category[$val];
+              $prod_id[$first_id++] = $value;
+        }
+        $product = array_combine( array_keys( $product ), array_keys( $prod_id ) );
+        // формируем массив параметров для запроса к таблице связи товар - раздел
+        foreach ( $category as $value )
+        {
+            foreach ( $value as $key=>$val)
+            {
+                $prod_cat_bind[0] .= str_pad('', 2, 'ii');
+                $prod_cat_bind[] = (int)$product[$key];
+                $prod_cat_bind[] = (int)$in_db_category[$val];
+            }
         }
     }
-       
-    // добавляем информацию о принадлежности продукта к категории в таблицу связи
-    $query = "INSERT IGNORE INTO `a_prod_cat`
-                         ( `product_id`, `category_id` ) 
-                         VALUES ". implode(',', array_fill( 1, (count( $prod_cat_bind )-1)/2, '(?,?)'  ) );
-    foreach( $prod_cat_bind as $key => $value )
-        $prod_cat_bind[$key] = &$prod_cat_bind[$key];
-    $stmt = $mysqli->prepare( $query );
-    call_user_func_array( [$stmt, 'bind_param'], $prod_cat_bind );
-	$stmt->execute();
-
-    // добавляем информацию о ценах на товары
-    $query = "INSERT INTO `a_price` 
-                     ( `product_id`, `price_type`, `price` ) 
-                     VALUES ". implode(',', array_fill( 1, (count( $price_bind )-1)/3, '(?,?,?)'  ) );
-    foreach( $price_bind as $key => $value )
-        $price_bind[$key] = &$price_bind[$key];
-    $stmt = $mysqli->prepare( $query );
-    call_user_func_array( [$stmt, 'bind_param'], $price_bind );
-	$stmt->execute();
-        
-    // добавляем информацию о свойствах товара
-    $query = "INSERT INTO `a_property` 
-                     ( `product_id`, `property_name`, `property_value` ) 
-                     VALUES ". implode(',', array_fill( 1, (count( $property_bind )-1)/3, '(?,?,?)'  ) );
-    foreach( $property_bind as $key => $value )
-        $property_bind[$key] = &$property_bind[$key];
-    $stmt = $mysqli->prepare( $query );
-    call_user_func_array( [$stmt, 'bind_param'], $property_bind );
-	$stmt->execute();
-
+    else
+    {
+        // что то пошло не так при добавлении товара, отменяем транзакцию и выходим
+        $report .= '<h4>Произошла ошибка. Откат изменений.</4>';
+        echo $report;
+        $mysqli->query( 'ROLLBACK;' );
+        $mysqli->close();
+        return false;
+    }
+    
+    if ( !empty( $prod_cat_bind ) )
+    {
+        // добавляем информацию о принадлежности продукта к категории в таблицу связи
+        $report .='<h3>Таблица a_prod_cat</h3>';
+        $query = "INSERT IGNORE INTO `a_prod_cat`
+                             ( `product_id`, `category_id` ) 
+                             VALUES ". implode(',', array_fill( 1, (count( $prod_cat_bind )-1)/2, '(?,?)'  ) );
+        foreach( $prod_cat_bind as $key => $value )
+            $prod_cat_bind[$key] = &$prod_cat_bind[$key];
+        $stmt = $mysqli->prepare( $query );
+        call_user_func_array( [$stmt, 'bind_param'], $prod_cat_bind );
+	    $stmt->execute();
+        $stmt->store_result();
+        if ( $stmt->affected_rows != (count( $prod_cat_bind )-1)/2 ) 
+        {
+            // что то пошло не так при добавлении товара, отменяем транзакцию и выходим
+            $report .= '<h4>Произошла ошибка. Откат изменений.</4>';
+            echo $report;
+            $mysqli->query( 'ROLLBACK;' );
+            $mysqli->close();
+            return false;
+        }
+        $report .='<p>- добавлено: '. $stmt->affected_rows .' связ'. num_end($stmt->affected_rows, ['ь','и','ей']) .'</p>';
+        $stmt->close();
+    }
+    
+    if ( !empty( $price_bind ) )
+    {
+        // добавляем информацию о ценах на товары
+        $report .='<h3>Таблица a_price</h3>';
+        $query = "INSERT INTO `a_price` 
+                         ( `product_id`, `price_type`, `price` ) 
+                         VALUES ". implode(',', array_fill( 1, (count( $price_bind )-1)/3, '(?,?,?)'  ) );
+        foreach( $price_bind as $key => $value )
+            $price_bind[$key] = &$price_bind[$key];
+        $stmt = $mysqli->prepare( $query );
+        call_user_func_array( [$stmt, 'bind_param'], $price_bind );
+	    $stmt->execute();
+        $stmt->store_result();
+        if ( $stmt->affected_rows != (count( $price_bind )-1)/3 )
+            {
+                // что то пошло не так при добавлении товара, отменяем транзакцию и выходим
+                $report .= '<h4>Произошла ошибка. Откат изменений.</4>';
+                echo $report;
+                $mysqli->query( 'ROLLBACK;' );
+                $mysqli->close();
+                return false;
+            }
+        $report .='<p>- добавлено: '. $stmt->affected_rows .' связ'. num_end($stmt->affected_rows, ['ь','и','ей']) .'</p>';
+        $stmt->close();
+    }
+    if ( !empty( $property_bind ) )
+    {
+        // добавляем информацию о свойствах товара
+        $report .='<h3>Таблица a_property</h3>';
+        $query = "INSERT INTO `a_property` 
+                         ( `product_id`, `property_name`, `property_value` ) 
+                         VALUES ". implode(',', array_fill( 1, (count( $property_bind )-1)/3, '(?,?,?)'  ) );
+        foreach( $property_bind as $key => $value )
+            $property_bind[$key] = &$property_bind[$key];
+        $stmt = $mysqli->prepare( $query );
+        call_user_func_array( [$stmt, 'bind_param'], $property_bind );
+	    $stmt->execute();
+        $stmt->store_result();
+        if ( $stmt->affected_rows != (count( $property_bind )-1)/3 )
+            {
+              // что то пошло не так при добавлении товара, отменяем транзакцию и выходим
+                $report .= '<h4>Произошла ошибка. Откат изменений.</4>';
+                echo $report;
+                $mysqli->query( 'ROLLBACK;' );
+                $mysqli->close();
+                return false;
+            }
+        $report .='<p>- добавлено: '. $stmt->affected_rows .' связ'. num_end($stmt->affected_rows, ['ь','и','ей']) .'</p>';
+        $stmt->close();
+    }
+    $report .='<h4>Изменения успешно внесены в базу данных.</h4>';
+    $mysqli->query( 'COMMIT;' );
+    $mysqli->close();
+    
+    echo $report;
 }
 
 $import = importXml( 'Product.xml' );
