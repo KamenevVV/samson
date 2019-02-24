@@ -17,10 +17,6 @@ function convertString( string $a, string $b):string
     return $a;
 }
 
-function num_end($number, $titles){
-	$cases = array (2, 0, 1, 1, 1, 2);
-	return $titles[ ($number%100>4 && $number%100<20)? 2 : $cases[min($number%10, 5)] ];
-}
 
 /**
 * функция преобразования строки
@@ -45,6 +41,22 @@ function convertString2( string $a, string $b, array $c )
 
     }while ( $pos !== false );
     return $a;  
+}
+
+/**
+* - функию mySortForKey($a, $b). $a – двумерный массив вида [['a'=>2,'b'=>1],['a'=>1,'b'=>3]], 
+* $b – ключ вложенного массива. Результат ее выполнения: двумерном массива $a отсор* тированный 
+* по возрастанию значений для ключа $b. В случае отсутствия ключа $b в одном из вложенных массивов, 
+* выбросить ошибку класса Exception с индексом неправильного массива
+*/
+
+
+/**
+* вспомогательная функция для вывода окончаний
+*/
+function num_end($number, $titles){
+	$cases = array (2, 0, 1, 1, 1, 2);
+	return $titles[ ($number%100>4 && $number%100<20)? 2 : $cases[min($number%10, 5)] ];
 }
 
  /**
@@ -98,11 +110,13 @@ function importXml( string $a)
         foreach ( $p->Свойства->children() as $key=>$s )
         {
             $key = $mysqli->real_escape_string($key);
+            $atrr = ( $s['ЕдИзм'] ) ? $mysqli->real_escape_string( $s['ЕдИзм'] ) : NULL ;
             $property = $mysqli->real_escape_string((string)$s);
-            $property_bind[0] .= str_pad('', 3, 'iss');
+            $property_bind[0] .= str_pad('', 4, 'isss');
             $property_bind[] = $surr;
             $property_bind[] = $key;
             $property_bind[] = $property;
+            $property_bind[] = $atrr;
         }
         foreach ( $p->Разделы->children() as $g )
         {
@@ -296,15 +310,15 @@ function importXml( string $a)
         // добавляем информацию о свойствах товара
         $report .='<h3>Таблица a_property</h3>';
         $query = "INSERT INTO `a_property` 
-                         ( `product_id`, `property_name`, `property_value` ) 
-                         VALUES ". implode(',', array_fill( 1, (count( $property_bind )-1)/3, '(?,?,?)'  ) );
+                         ( `product_id`, `property_name`, `property_value`, `property_unit` ) 
+                         VALUES ". implode(',', array_fill( 1, (count( $property_bind )-1)/4, '(?,?,?,?)'  ) );
         foreach( $property_bind as $key => $value )
             $property_bind[$key] = &$property_bind[$key];
         $stmt = $mysqli->prepare( $query );
         call_user_func_array( [$stmt, 'bind_param'], $property_bind );
 	    $stmt->execute();
         $stmt->store_result();
-        if ( $stmt->affected_rows != (count( $property_bind )-1)/3 )
+        if ( $stmt->affected_rows != (count( $property_bind )-1)/4 )
             {
               // что то пошло не так при добавлении товара, отменяем транзакцию и выходим
                 $report .= '<h4>Произошла ошибка. Откат изменений.</4>';
@@ -529,7 +543,7 @@ return file_put_contents( $a, $xml );
 //echo '<h3>convertString()</h3>'; echo convertString( 'abcdf abcdf abcdf', 'abcdf' );  echo '<hr />';
 //echo '<h3>convertString2()</h3>'; echo convertString2( 'abcdf abcdf abcdf', 'abcdf', [ 1, 3 ] ); echo '<hr />';
 //$import = importXml( 'Product.xml' );
-$export = exportXml( 'exportXml.xml', 'Принтеры' );
+$export = exportXml( 'exportXml.xml', 'Бумага' );
 
 
 ?>
