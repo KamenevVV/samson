@@ -44,11 +44,51 @@ function convertString2( string $a, string $b, array $c )
 }
 
 /**
-* - функию mySortForKey($a, $b). $a – двумерный массив вида [['a'=>2,'b'=>1],['a'=>1,'b'=>3]], 
-* $b – ключ вложенного массива. Результат ее выполнения: двумерном массива $a отсор* тированный 
+* $a – двумерный массив вида [['a'=>2,'b'=>1],['a'=>1,'b'=>3]] 
+* $b – ключ вложенного массива. Результат ее выполнения: двумерный массив $a отсортированный 
 * по возрастанию значений для ключа $b. В случае отсутствия ключа $b в одном из вложенных массивов, 
 * выбросить ошибку класса Exception с индексом неправильного массива
+* с использованием ksort
 */
+function mySortForKey( array $a, string $b ):array
+{
+    foreach ( $a as $key=>$value )
+    {
+        if ( !array_key_exists( $b, $value ) ) throw new Exception( 'Вложенный массив с индексом ['.$key.'] не содержит ключ \''.$b.'\'' );
+        $vs[$value[$b]] = $value;
+    }
+    ksort($vs);
+    return array_values($vs);
+}
+
+/**
+* $a – двумерный массив вида [['a'=>2,'b'=>1],['a'=>1,'b'=>3]] 
+* $b – ключ вложенного массива. Результат ее выполнения: двумерный массив $a отсортированный 
+* по возрастанию значений для ключа $b. В случае отсутствия ключа $b в одном из вложенных массивов, 
+* выбросить ошибку класса Exception с индексом неправильного массива
+* сортировка "пузырьком"
+*/
+function mySortForKey2( array $a, string $b ):array
+{
+    do{
+        $flag = false;
+        for ( $i=1; $i<count($a); $i++ )
+        {
+            if ( !array_key_exists( $b, $a[$i-1] ) ) 
+                throw new Exception( 'Вложенный массив с индексом ['. $i-1 .'] не содержит ключ \''.$b.'\'' );
+            if ( !array_key_exists( $b, $a[$i] ) )
+                throw new Exception( 'Вложенный массив с индексом ['. $i .'] не содержит ключ \''.$b.'\'' );
+            $fir = $a[$i-1];
+            $sec = $a[$i];
+            if ( $fir[$b] < $sec[$b] ) continue;
+            $a[$i-1] = $a[$i];
+            $a[$i] = $fir;
+            $flag = true;
+        }
+        
+    }while($flag);
+    return $a;
+}
 
 
 /**
@@ -543,8 +583,24 @@ return file_put_contents( $a, $xml );
 //echo '<h3>convertString()</h3>'; echo convertString( 'abcdf abcdf abcdf', 'abcdf' );  echo '<hr />';
 //echo '<h3>convertString2()</h3>'; echo convertString2( 'abcdf abcdf abcdf', 'abcdf', [ 1, 3 ] ); echo '<hr />';
 //$import = importXml( 'Product.xml' );
-$export = exportXml( 'exportXml.xml', 'Бумага' );
+//$export = exportXml( 'exportXml.xml', 'Бумага' );
+try{
+    echo '<h3>mySortForKey()</h3>';
+    print_r( $arr = [['a'=>2,'d'=>4],['b'=>1,'d'=>3],['d'=>1,'r'=>1]] );
+    print_r( $sort = mySortForKey( $arr, 'd' ) );
+    echo '<hr />';
+} catch ( Exception $e ) {
+    echo $e->getMessage();
+}
 
+try{
+    echo '<h3>mySortForKey2()</h3>';
+    print_r( $arr = [['a'=>2,'d'=>4],['d'=>7,'e'=>3],['c'=>1,'d'=>1]] );
+    print_r( $sort = mySortForKey2( $arr, 'd' ) );
+    echo '<hr />';
+} catch ( Exception $e ) {
+    echo $e->getMessage();
+}
 
 ?>
 </div></pre>
