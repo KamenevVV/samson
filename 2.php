@@ -290,6 +290,7 @@ function importXml( string $a)
         $report .='<p>- добавлено: '. $stmt->affected_rows .' связ'. num_end($stmt->affected_rows, ['ь','и','ей']) .'</p>';
         $stmt->close();
     }
+    
     if ( !empty( $property_bind ) )
     {
         // добавляем информацию о свойствах товара
@@ -320,11 +321,203 @@ function importXml( string $a)
     $mysqli->close();
     
     echo $report;
+    return true;
 }
 
-$import = importXml( 'Product.xml' );
+/**
+* вспомогательная функция для функции экспорта данных БД -> XML
+* рекурсивно достаёт вложенные категории
+* массив $array - можно использовать для вывода вложенных разделов (не реализовано)
+*/
+function parent_category( object $mysqli, int $id, &$arr )
+{
+    $query = "SELECT `category_id` FROM `a_category` WHERE `parent_id` = ?";
+    $stmt = $mysqli->prepare( $query );
+    $stmt->bind_param( 'i', $id );
+	$stmt->execute();
+    $stmt->store_result();
+    $stmt->bind_result( $category_id );
+    if ( $stmt->num_rows )
+    {
+        while( $stmt->fetch() )
+        {
+            $arr[] = $category_id;
+//            $array[] = $category_id;
+            if( $par = parent_category( $mysqli, $category_id, $arr ) )
+            {
+//                $array[$category_id] = $par;
+            }
+        }
+        $stmt->close();
+        return $array;
+    }
+    $stmt->close();
+    return false;
+}
+
+/**
+* экспорт данных БД -> XML
+*/
+function exportXml( string $a, string $b )
+{
+    $array = array();
+    // установим соедиение с базой данных и кодировку
+    $mysqli = new mysqli('localhost', 'mysql', 'mysql', 'test_samson');
+    if (mysqli_connect_errno())
+    {
+    printf("Не удалось подключиться: %s\n", mysqli_connect_error());
+    exit();
+    }
+    $query = $mysqli->query('set names utf8');
+    // поскольку глубина вложенности рубрик не ограничена, используем вспомогательную рекурсивную функцию
+    // вариант доставать всю таблицу и обрабатывать данные на уровне РНР мне кажется менее привлекательным
+    $query = "SELECT `category_id` FROM `a_category` WHERE `category_name` = ? ";
+    $stmt = $mysqli->prepare( $query );
+    $stmt->bind_param( 's', $b );
+	$stmt->execute();
+    $stmt->store_result();
+    $stmt->bind_result( $category_id );
+    if ( $stmt->num_rows )
+    {
+        while( $stmt->fetch() )
+        {
+            $num[] = $category_id;
+//            $array[] = $category_id;
+            if( $par = parent_category( $mysqli, $category_id, $num ) )
+            {
+//                $array[$category_id] = $par;
+            }
+        }
+    }
+    // результат выборки можно кешировать, что бы не напрягать БД лишний раз рекурсией
+    
+    // формируем запрос на выборку всех товаров категории и вложенных в неё подкатегорий
+    $query = "
+    SELECT DISTINCT 
+            `product_id`, 
+            `product_code`, 
+            `product_name`, 
+            `price_id`, 
+            `price_type`, 
+            `price`, 
+            `property_id`, 
+            `property_name`, 
+            `property_value`, 
+            `property_unit`,
+            `a_category`.`category_id`,
+            `category_name` 
+        FROM (SELECT `product_id`, 
+                     `category_id` 
+                FROM `a_prod_cat` 
+                WHERE `category_id` IN("
+                . implode(',', array_fill( 1, count( $num ), '?'  ) ) 
+                .")) pc  
+        LEFT JOIN `a_product` USING(`product_id`)
+        LEFT JOIN `a_price` USING(`product_id`)
+        LEFT JOIN `a_property` USING(`product_id`)
+        LEFT JOIN `a_prod_cat` USING(`product_id`)
+        LEFT JOIN `a_category` ON `a_prod_cat`.`category_id` = `a_category`.`category_id`
+        ORDER BY `product_name`";
+    
+    foreach($num as $key => $value)
+        $num[$key] = &$num[$key];
+    array_unshift( $num, str_pad('', count($num), 'i') );
+    $stmt = $mysqli->prepare( $query );
+    call_user_func_array([$stmt, 'bind_param'], $num);
+	$stmt->execute();
+    $stmt->store_result();
+    $stmt->bind_result( $product_id, 
+                        $product_code, 
+                        $product_name, 
+                        $price_id, 
+                        $price_type, 
+                        $price, 
+                        $property_id, 
+                        $property_name, 
+                        $property_value, 
+                        $property_unit,
+                        $category_id,
+                        $category_name );
+    if ( $stmt->num_rows )
+    {
+        while( $stmt->fetch() )
+        {
+            $product[$product_id]['Товар']['Код'] = $product_code;
+            $product[$product_id]['Товар']['Название'] = $product_name;
+            $product[$product_id]['Цена'][$price_type] = $price;
+            $product[$product_id]['Свойства'][$property_name][$property_value] = $property_unit;
+            $product[$product_id]['Раздел'][$category_id] = $category_name;
+        }
+    }
+
+    // собираем XML
+    $xml = "<?xml version=\"1.0\"  encoding=\"UTF-8\"?>
+<Товары>\n";
+    foreach ( $product as $prodvalue )
+    {
+        foreach ( $prodvalue as $prok=>$valval )
+        {
+            if ( $prok == 'Товар' )
+            {
+                $xml .=
+"  <Товар";
+                foreach ( $valval as $key=>$value )
+                {
+                    $xml .= ' '. $key .'="'. $value .'"';
+                }
+                $xml .= ">\n";
+            }
+            if ( $prok == 'Цена' )
+            {
+                foreach ( $valval as $key=>$value )
+                {
+                    $xml .= 
+"    <Цена Тип=\"". $key ."\">". $value ."</Цена>\n";
+                }
+            }
+            if ( $prok == 'Свойства' )
+            {
+                $xml .=
+"    <Свойства>\n";
+                foreach ( $valval as $key=>$value )
+                {
+                    foreach ( $value as $ak=>$atr )
+                    {
+                        $xml .=
+"      <". $key .(($atr)?" ЕдИзм=\"". $atr ."\"":'').">". $ak ."</". $key .">\n";
+                    }
+                }
+                $xml .=
+"    </Свойства>\n";
+            }
+            if ( $prok == 'Раздел' )
+            {
+                // здесь если разделы будут иметь неограниченную вложенность нужна рекурсия
+                $xml .=
+"    <Раздел>\n";
+                foreach ( $valval as $key=>$value )
+                {
+                    $xml .=
+"      <Раздел>". $value ."</Раздел>\n";
+                }
+                $xml .=
+"    </Раздел>\n";
+            }
+
+        }
+        $xml .=
+"  </Товар>\n";
+    }
+    $xml .='</Товары>';
+    echo htmlspecialchars($xml);
+
+return file_put_contents( $a, $xml );
+}
 
 ?>
+
+    
+    
 <html>
 <head>
 <title>Блок №2</title>
@@ -335,6 +528,10 @@ $import = importXml( 'Product.xml' );
 <?php
 //echo '<h3>convertString()</h3>'; echo convertString( 'abcdf abcdf abcdf', 'abcdf' );  echo '<hr />';
 //echo '<h3>convertString2()</h3>'; echo convertString2( 'abcdf abcdf abcdf', 'abcdf', [ 1, 3 ] ); echo '<hr />';
+//$import = importXml( 'Product.xml' );
+$export = exportXml( 'exportXml.xml', 'Принтеры' );
+
+
 ?>
 </div></pre>
 </body>
