@@ -2,6 +2,7 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 'On');
 header('Content-Type: text/html; charset=utf-8');
+//header('Content-type: text/html; charset=WINDOWS-1251');
 
 /**
 * функция преобразования строки
@@ -125,30 +126,44 @@ function importXml( string $a)
     $category_bind[] = ''; // первая строка массива параметров используемая для хранения литералов типа переменных для таблицы a_category
     $prod_cat_bind[] = ''; // первая строка массива параметров используемая для хранения литералов типа переменных для таблицы связи a_prod_cat
     $category_unique = array();
+    $product = array();
     $report = '';
     
     // парсим XML файл и собираем массивы параметров
-    foreach ( $xml->Товар as $p )
+    if ( isset($xml->Товар) )
+    {
+    foreach (  $xml->Товар as  $p )
     {
         $surr++;
         $code = (int)$p['Код'] ?? NULL;
-        $name = $mysqli->real_escape_string((string)$p['Название']);
+        $name = (string)$p['Название'] ?? '';
+        $name = $mysqli->real_escape_string( $name );
         $product_bind[0] .= str_pad('', 2, 'is');
         $product_bind[] = $code;
         $product_bind[] = $name;
         $product[$surr] = $name; // этот массив будет содержать соответсвие суррогатного ключа реальному ключу из БД
-        
-        foreach ( $p->Цена as $c )
+        $allparse[$surr]['Код'] = $code;
+        $allparse[$surr]['Название'] = $name;
+        if (isset(  $p->Цена ) )
         {
-            $type  = $mysqli->real_escape_string((string)$c['Тип']);
-            $price = $mysqli->real_escape_string((string)$c);
+        foreach ( $p->Цена as $c ) 
+        {
+            $type  = (string)$c['Тип'] ?? '';
+            $price = (string)$c ?? '';
+            $type  = $mysqli->real_escape_string( $type );
+            $price = $mysqli->real_escape_string( $price );
             $price_bind[0] .= str_pad('', 3, 'isd');
             $price_bind[] = $surr;
             $price_bind[] = $type;
             $price_bind[] = $price;
+            $allparse[$surr]['Цена'][$type] = $price;
         }
+        }
+        if ( isset( $p->Свойства ) )
+        {
         foreach ( $p->Свойства->children() as $key=>$s )
         {
+            $key = ($key) ?? '';
             $key = $mysqli->real_escape_string($key);
             $atrr = ( $s['ЕдИзм'] ) ? $mysqli->real_escape_string( $s['ЕдИзм'] ) : NULL ;
             $property = $mysqli->real_escape_string((string)$s);
@@ -157,17 +172,27 @@ function importXml( string $a)
             $property_bind[] = $key;
             $property_bind[] = $property;
             $property_bind[] = $atrr;
+            $allparse[$surr]['Свойства'][$key][$property] = $atrr;
         }
+        }
+        if ( isset ( $p->Разделы ) )
+        {
         foreach ( $p->Разделы->children() as $g )
         {
+            $cat = (string)$g ?? '';
             $cat = $mysqli->real_escape_string((string)$g);
             $category_bind[0] .= str_pad('', 3, 'is');
             $category_bind[] = $surr;
             $category_bind[] = $cat;
             $category_unique[] = $cat;
             $category[][$surr] = $cat;
+            $allparse[$surr]['Раздел'][$cat] = $cat;
+        }
         }
     }
+    }
+print_r( $allparse );
+
     // если добавлять нечего, закрываем соединение и выходим
     if ( empty( $product ) )
     {
@@ -505,7 +530,7 @@ function exportXml( string $a, string $b )
     }
 
     // собираем XML
-    $xml = "<?xml version=\"1.0\"  encoding=\"UTF-8\"?>
+    $xml = "<?xml version=\"1.0\"  encoding=\"windows-1251\"?>
 <Товары>\n";
     foreach ( $product as $prodvalue )
     {
@@ -563,8 +588,12 @@ function exportXml( string $a, string $b )
 "  </Товар>\n";
     }
     $xml .='</Товары>';
-    echo htmlspecialchars($xml);
+//    echo htmlspecialchars($xml);
 
+//echo mb_internal_encoding();
+$xml = mb_convert_encoding($xml, "cp1251", "UTF-8");
+
+//$xml = iconv("UTF-8", "WINDOWS-1251", $xml);
 return file_put_contents( $a, $xml );
 }
 
@@ -582,8 +611,9 @@ return file_put_contents( $a, $xml );
 <?php
 //echo '<h3>convertString()</h3>'; echo convertString( 'abcdf abcdf abcdf', 'abcdf' );  echo '<hr />';
 //echo '<h3>convertString2()</h3>'; echo convertString2( 'abcdf abcdf abcdf', 'abcdf', [ 1, 3 ] ); echo '<hr />';
-//$import = importXml( 'Product.xml' );
+$import = importXml( 'Product.xml' );
 //$export = exportXml( 'exportXml.xml', 'Бумага' );
+/*
 try{
     echo '<h3>mySortForKey()</h3>';
     print_r( $arr = [['a'=>2,'d'=>4],['b'=>1,'d'=>3],['d'=>1,'r'=>1]] );
@@ -601,7 +631,7 @@ try{
 } catch ( Exception $e ) {
     echo $e->getMessage();
 }
-
+*/
 ?>
 </div></pre>
 </body>
