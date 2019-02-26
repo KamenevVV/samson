@@ -135,7 +135,7 @@ function importXml( string $a)
     foreach (  $xml->Товар as  $p )
     {
         $surr++;
-        $code = (int)$p['Код'] ?? NULL;
+        $code = (int)$p['Код'] ?? 0;
         $name = (string)$p['Название'] ?? '';
         $name = $mysqli->real_escape_string( $name );
         $product_bind[0] .= str_pad('', 2, 'is');
@@ -152,10 +152,7 @@ function importXml( string $a)
             $price = (string)$c ?? '';
             $type  = $mysqli->real_escape_string( $type );
             $price = $mysqli->real_escape_string( $price );
-            $price_bind[0] .= str_pad('', 3, 'isd');
-            $price_bind[] = $surr;
-            $price_bind[] = $type;
-            $price_bind[] = $price;
+            $prac[$surr]['Цена'][$type] = $price;
             $allparse[$surr]['Цена'][$type] = $price;
         }
         }
@@ -165,13 +162,9 @@ function importXml( string $a)
         {
             $key = ($key) ?? '';
             $key = $mysqli->real_escape_string($key);
-            $atrr = ( $s['ЕдИзм'] ) ? $mysqli->real_escape_string( $s['ЕдИзм'] ) : NULL ;
+            $atrr = ( $s['ЕдИзм'] ) ? $mysqli->real_escape_string( $s['ЕдИзм'] ) : '' ;
             $property = $mysqli->real_escape_string((string)$s);
-            $property_bind[0] .= str_pad('', 4, 'isss');
-            $property_bind[] = $surr;
-            $property_bind[] = $key;
-            $property_bind[] = $property;
-            $property_bind[] = $atrr;
+            $prop[$surr]['Свойства'][$key][$property] = $atrr;
             $allparse[$surr]['Свойства'][$key][$property] = $atrr;
         }
         }
@@ -191,7 +184,7 @@ function importXml( string $a)
         }
     }
     }
-print_r( $allparse );
+
 
     // если добавлять нечего, закрываем соединение и выходим
     if ( empty( $product ) )
@@ -344,9 +337,23 @@ print_r( $allparse );
         $stmt->close();
     }
     
+    // добавляем информацию о ценах на товары
     if ( !empty( $price_bind ) )
     {
-        // добавляем информацию о ценах на товары
+        $prac = array_combine( array_keys( $prod_id ), $prac );
+        foreach ( $prac as $key=>$value )
+        {
+            foreach ( $value as $key2=>$value2 )
+            {
+                foreach ( $value2 as $key3=>$value3 )
+                {
+                        $price_bind[0] .= str_pad('', 3, 'isd');
+                        $price_bind[] = $key;
+                        $price_bind[] = $key3;
+                        $price_bind[] = $value3;
+                }
+            }
+        }
         $report .='<h3>Таблица a_price</h3>';
         $query = "INSERT INTO `a_price` 
                          ( `product_id`, `price_type`, `price` ) 
@@ -369,10 +376,28 @@ print_r( $allparse );
         $report .='<p>- добавлено: '. $stmt->affected_rows .' связ'. num_end($stmt->affected_rows, ['ь','и','ей']) .'</p>';
         $stmt->close();
     }
-    
+
+    // добавляем информацию о свойствах товара
     if ( !empty( $property_bind ) )
     {
-        // добавляем информацию о свойствах товара
+        $prop = array_combine( array_keys( $prod_id ), $prop );
+        foreach ( $prop as $key=>$value )
+        {
+            foreach ( $value as $key2=>$value2 )
+            {
+                foreach ( $value2 as $key3=>$value3 )
+                {
+                    foreach ( $value3 as $key4=>$value4 )
+                    {
+                        $property_bind[0] .= str_pad('', 4, 'isss');
+                        $property_bind[] = $key;
+                        $property_bind[] = $key3;
+                        $property_bind[] = $key4;
+                        $property_bind[] = $value4;
+                    }
+                }
+            }
+        }
         $report .='<h3>Таблица a_property</h3>';
         $query = "INSERT INTO `a_property` 
                          ( `product_id`, `property_name`, `property_value`, `property_unit` ) 
