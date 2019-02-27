@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Хост: 127.0.0.1:3306
--- Время создания: Фев 22 2019 г., 10:22
+-- Время создания: Фев 27 2019 г., 10:14
 -- Версия сервера: 5.7.23
 -- Версия PHP: 7.2.10
 
@@ -31,7 +31,7 @@ SET time_zone = "+00:00";
 CREATE TABLE `a_category` (
   `parent_id` int(11) DEFAULT NULL,
   `category_id` int(11) NOT NULL,
-  `category_code` int(11) DEFAULT NULL,
+  `category_code` int(11) NOT NULL DEFAULT '0',
   `category_name` varchar(30) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COMMENT='Таблица рубрик';
 
@@ -56,7 +56,7 @@ CREATE TABLE `a_price` (
 
 CREATE TABLE `a_product` (
   `product_id` int(11) NOT NULL,
-  `product_code` int(11) NOT NULL,
+  `product_code` int(11) NOT NULL DEFAULT '0',
   `product_name` varchar(30) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COMMENT='Таблица товаров';
 
@@ -81,7 +81,8 @@ CREATE TABLE `a_property` (
   `property_id` int(11) NOT NULL,
   `product_id` int(11) NOT NULL,
   `property_name` varchar(30) NOT NULL,
-  `property_value` varchar(30) NOT NULL
+  `property_value` varchar(30) NOT NULL,
+  `property_unit` varchar(10) NOT NULL DEFAULT ''
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COMMENT='Таблица свойств товара';
 
 --
@@ -111,7 +112,7 @@ ALTER TABLE `a_price`
 --
 ALTER TABLE `a_product`
   ADD PRIMARY KEY (`product_id`),
-  ADD KEY `product_name` (`product_name`);
+  ADD KEY `product_name` (`product_name`) USING BTREE;
 
 --
 -- Индексы таблицы `a_prod_cat`
