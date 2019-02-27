@@ -376,6 +376,10 @@ function importXml( string $a)
         $report .='<p>- добавлено: '. $stmt->affected_rows .' связ'. num_end($stmt->affected_rows, ['ь','и','ей']) .'</p>';
         $stmt->close();
     }
+<<<<<<< HEAD
+=======
+
+>>>>>>> 7cbd07767fafafd12a6afb4ee8d1a5d6d199bd7f
     // добавляем информацию о свойствах товара
     if ( !empty( $property_bind ) )
     {
