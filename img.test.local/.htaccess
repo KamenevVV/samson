@@ -1,0 +1,6 @@
+#Обработка ошибки 404
+ErrorDocument 404 /errors/404.html
+
+RewriteEngine on
+#XYY.jpg -> /goods/X/YY.jpg
+RewriteRule ^([a-zA-Z]{1})([0-9]{2})\.jpg$ /goods/$1/$2.jpg

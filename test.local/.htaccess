@@ -1,0 +1,16 @@
+#Полностью запретить внешний доступ к папке
+#Order allow,deny
+#Deny from all
+
+#Запретить просмотр директории
+#Options All -Indexes
+
+#Запретить PHP обработку файлов
+php_flag engine off
+
+#Запретить обработку PHP файлов с указанными расширениями
+RemoveHandler .phtml .php .php2 .php3 .php4 .php5 .php7 .phps
+
+
+
+
